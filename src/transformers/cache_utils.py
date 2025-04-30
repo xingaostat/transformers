@@ -1697,6 +1697,7 @@ class HybridCache(Cache):
             min(config.sliding_window, max_cache_len),
             self.head_dim,
         )
+        self.sliding_window = min(config.sliding_window, max_cache_len)
         device = torch.device(device) if device is not None else None
         for i in range(config.num_hidden_layers):
             if layer_device_map is not None:
