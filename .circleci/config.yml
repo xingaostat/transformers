@@ -31,9 +31,9 @@ jobs:
         parallelism: 1
         steps:
             - checkout
-            - run: PR_NUMBER=$(python3 -c 'utils/extract_pr_number_from_circleci.py')
+            - run: PR_NUMBER=$(python3 utils/extract_pr_number_from_circleci.py)
             - run: echo $PR_NUMBER
-            - run: (python3 -c 'utils/extract_pr_number_from_circleci.py') > pr_number.txt
+            - run: python3 utils/extract_pr_number_from_circleci.py > pr_number.txt
             - run: cat pr_number.txt
             - run: echo $(cat pr_number.txt)
             - run: if [[ "$CIRCLE_PULL_REQUEST" == "" && "$CIRCLE_BRANCH" != "main" && "$CIRCLE_BRANCH" != *-release ]]; then echo "Not a PR, not the main branch and not a release branch, skip test!"; circleci-agent step halt; fi
