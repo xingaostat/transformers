@@ -8,6 +8,8 @@ payload = {"branch": f"pull/{pr_number}/head" , "parameters" :{"nightly": "false
 payload = str(payload).replace("'", '"').replace('"false"', 'false')
 print(payload)
 
+print(len(os.environ.get("Circle-Token", "")))
+
 headers = {
     'content-type': "application/json",
     'Circle-Token': os.environ.get("CIRCLECI_TOKEN", ""),
