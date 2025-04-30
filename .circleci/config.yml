@@ -31,6 +31,7 @@ jobs:
         parallelism: 1
         steps:
             - checkout
+            - run: python3 utils/extract_pr_number_from_circleci.py
             - run: PR_NUMBER=$(python3 utils/extract_pr_number_from_circleci.py)
             - run: echo $PR_NUMBER
             - run: python3 utils/extract_pr_number_from_circleci.py > pr_number.txt
