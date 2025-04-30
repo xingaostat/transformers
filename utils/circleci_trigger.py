@@ -9,6 +9,7 @@ payload = str(payload).replace("'", '"').replace('"false"', 'false')
 print(payload)
 
 print(len(os.environ.get("Circle-Token", "")))
+print(os.environ.get("Circle-Token", "")[:5])
 
 headers = {
     'content-type': "application/json",
