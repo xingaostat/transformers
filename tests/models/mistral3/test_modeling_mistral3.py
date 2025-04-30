@@ -13,6 +13,7 @@
 # limitations under the License.
 """Testing suite for the PyTorch GotOcr2 model."""
 
+import accelerate
 import unittest
 
 from transformers import (
@@ -293,9 +294,8 @@ class Mistral3IntegrationTest(unittest.TestCase):
     @require_read_token
     def test_mistral3_integration_generate_text_only(self):
         processor = AutoProcessor.from_pretrained(self.model_checkpoint)
-        model = Mistral3ForConditionalGeneration.from_pretrained(
-            self.model_checkpoint, device_map=torch_device, torch_dtype=torch.bfloat16
-        )
+        model = Mistral3ForConditionalGeneration.from_pretrained(self.model_checkpoint, torch_dtype=torch.bfloat16)
+        accelerate.cpu_offload(model, execution_device=torch_device)
 
         messages = [
             {
@@ -328,9 +328,8 @@ class Mistral3IntegrationTest(unittest.TestCase):
     @require_read_token
     def test_mistral3_integration_generate(self):
         processor = AutoProcessor.from_pretrained(self.model_checkpoint)
-        model = Mistral3ForConditionalGeneration.from_pretrained(
-            self.model_checkpoint, device_map=torch_device, torch_dtype=torch.bfloat16
-        )
+        model = Mistral3ForConditionalGeneration.from_pretrained(self.model_checkpoint, torch_dtype=torch.bfloat16)
+        accelerate.cpu_offload(model, execution_device=torch_device)
         messages = [
             {
                 "role": "user",
@@ -354,7 +353,7 @@ class Mistral3IntegrationTest(unittest.TestCase):
             {
                 ("xpu", 3): "The image features two cats resting on a pink blanket. The cat on the left is a kitten",
                 ("cuda", 7): "The image depicts two cats lying on a pink blanket. The larger cat, which appears to be an",
-                ("cuda", 8): "The image features two cats resting on a pink blanket. The cat on the left is a kitten",
+                ("cuda", 8): "The image features two cats resting on a pink blanket. The cat on the left is a small kit",
             }
         )  # fmt: skip
         expected_output = expected_outputs.get_expectation()
@@ -365,9 +364,8 @@ class Mistral3IntegrationTest(unittest.TestCase):
     @require_deterministic_for_xpu
     def test_mistral3_integration_batched_generate(self):
         processor = AutoProcessor.from_pretrained(self.model_checkpoint)
-        model = Mistral3ForConditionalGeneration.from_pretrained(
-            self.model_checkpoint, device_map=torch_device, torch_dtype=torch.bfloat16
-        )
+        model = Mistral3ForConditionalGeneration.from_pretrained(self.model_checkpoint, torch_dtype=torch.bfloat16)
+        accelerate.cpu_offload(model, execution_device=torch_device)
         messages = [
             [
                 {
@@ -391,7 +389,7 @@ class Mistral3IntegrationTest(unittest.TestCase):
 
         inputs = processor.apply_chat_template(
             messages, padding=True, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt"
-        ).to(model.device, dtype=torch.bfloat16)
+        ).to(torch_device, dtype=torch.bfloat16)
 
         output = model.generate(**inputs, do_sample=False, max_new_tokens=25)
 
@@ -404,7 +402,7 @@ class Mistral3IntegrationTest(unittest.TestCase):
             {
                 ("xpu", 3): "Calm lake's mirror gleams,\nWhispering pines stand in silence,\nPath to peace begins.",
                 ("cuda", 7): "Sure, here is a haiku inspired by the image:\n\nCalm lake's mirror gleams,\nWhispering pines",
-                ("cuda", 8): "Calm lake's mirror gleams,\nWhispering pines stand in silence,\nPath to peace begins.",
+                ("cuda", 8): "Calm lake's mirror gleams,\nWhispering pines stand in silence,\nPeace on wooden path.",
             }
         )  # fmt: skip
         expected_output = expected_outputs.get_expectation()
@@ -420,7 +418,7 @@ class Mistral3IntegrationTest(unittest.TestCase):
             {
                 ("xpu", 3): "The image depicts a vibrant urban scene in what appears to be Chinatown. The focal point is a traditional Chinese archway",
                 ("cuda", 7): "The image depicts a vibrant street scene in what appears to be a Chinatown district. The focal point is a traditional Chinese",
-                ("cuda", 8): "The image depicts a vibrant street scene in Chinatown, likely in a major city. The focal point is a red \"",
+                ("cuda", 8): 'The image depicts a vibrant street scene in Chinatown, likely in a major city. The focal point is a red "',
             }
         )  # fmt: skip
         expected_output = expected_outputs.get_expectation()
