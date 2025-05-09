@@ -200,6 +200,65 @@ def eager_attention_forward(module, query, key, value, attention_mask, head_mask
 
     return attn_output, attn_weights
 
+###XG this is the new eager attention
+def eager_EPattention_forward(module, query, key, utility, value, attention_mask, head_mask=None, **kwargs):
+    ##attn_weights = torch.matmul(query, key.transpose(-1, -2))
+    attn_weights = torch.einsum('abid,abjd,abkd -> ijk', query, key, utility)
+    
+        
+        ####mul_qkl = torch.einsum('abid,abjd,abkd -> abijk', q, k, l) /(self.head_params**0.5)
+
+    ####value.size(-1) is the head_parameters
+    ####the following code basically does "/(self.head_params**0.5)"
+    if module.scale_attn_weights:
+        attn_weights = attn_weights / torch.full(
+            [], value.size(-1) ** 0.5, dtype=attn_weights.dtype, device=attn_weights.device
+        )
+    ### what is this scaling doing here?
+    # Layer-wise attention scaling
+    if module.scale_attn_by_inverse_layer_idx:
+        attn_weights = attn_weights / float(module.layer_idx + 1)
+    #### if this is not cross attention, we need causal mask####
+    if not module.is_cross_attention:
+        # if only "normal" attention layer implements causal mask
+        query_length, key_length, utility_length = query.size(-2), key.size(-2),utility.size(-2)
+        ###causal_mask = module.bias[:, :, key_length - query_length : key_length, :key_length]
+        ###we need to creat a new causal_mask which is called module.biasEP
+        causal_mask = module.biasEP[:, :, : query_length, :key_length,:utility_length]
+        #### I don't know when the lengths could be different???
+
+        
+        mask_value = torch.finfo(attn_weights.dtype).min
+        # Need to be a tensor, otherwise we get error: `RuntimeError: expected scalar type float but found double`.
+        # Need to be on the same device, otherwise `RuntimeError: ..., x and y to be on the same device`
+        mask_value = torch.full([], mask_value, dtype=attn_weights.dtype, device=attn_weights.device)
+        attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
+
+    #####XG need to create attention mask
+    if attention_mask is not None:
+        # Apply the attention mask, which is a preprocessed padding mask
+        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
+        ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
+        
+        attn_weights = attn_weights + causal_mask
+
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+
+    # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
+    attn_weights = attn_weights.type(value.dtype)
+    attn_weights = module.attn_dropout(attn_weights)
+
+    # Mask heads if we want to
+    if head_mask is not None:
+        attn_weights = attn_weights * head_mask
+
+    attn_output = torch.matmul(attn_weights, value)
+    attn_output = attn_output.transpose(1, 2)
+
+    return attn_output, attn_weights
+
+####end of EP Eager
+
 
 class GPT2Attention(nn.Module):
     def __init__(self, config, is_cross_attention=False, layer_idx=None):
@@ -213,6 +272,21 @@ class GPT2Attention(nn.Module):
             ),
             persistent=False,
         )
+         ######XG 3precomputerd EM causal mask, should I call it mask, it looks weird
+        self.register_buffer(
+            "biasEP",
+            mask = torch.zeros((max_positions, max_positions, max_positions))
+                for i in range(max_positions):
+                    for j in range(max_positions):
+                        for k in range(max_positions):
+                            if j <= i and k <= i:
+                                mask[i, j, k] = 1
+
+             # Add an extra dimension to match the required shape (1, 1, dim, dim,dim)
+            mask = mask.unsqueeze(0).unsqueeze(0)  # (1, 1, dim, dim,dim)
+            persistent=False,
+        )
+        #######
         self.register_buffer("masked_bias", torch.tensor(-1e4), persistent=False)
 
         self.embed_dim = config.hidden_size
