@@ -30,6 +30,50 @@ from ...activations import ACT2FN, get_activation
 from ...cache_utils import Cache, DynamicCache, EncoderDecoderCache, StaticCache
 from ...generation import GenerationMixin
 from ...modeling_attn_mask_utils import AttentionMaskConverter, _prepare_4d_attention_mask_for_sdpa
+
+#####XG: 5d_attention_mask (padding mask)
+########begin now I change to 5 dim
+def _prepare_5d_attention_mask_for_sdpa(
+    self,
+    attention_mask: Optional[torch.Tensor],
+    input_shape: Tuple[int],
+    inputs_embeds: torch.Tensor,
+    past_key_values_length: int,
+) -> torch.Tensor:
+    batch_size, seq_length = input_shape
+
+    is_causal = self.config.is_causal if self.config.is_causal is not None else True
+    if is_causal and attention_mask is None:
+        # SDPA will use a causal mask internally
+        return None
+
+    # Expand attention_mask for SDPA compatibility, so I guess tgt_seq is the query len, in 
+    ###cross attention the order is query first, then key len, utility len, where k length is source seq, u length
+    ###should also be source, where here tgt_seq_len is denoted by seq_len, src_seq_len is denoted by attention_mask.size(-1)
+    ###We need to find a place to declare the attension_mask.
+    ##Question, why seq_length, not attention_mask.size(-1)?I thought they are the same. No.
+    if attention_mask.dim() == 2:
+        # (batch_size, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
+        attention_mask = attention_mask[:, None, None, None,:]
+        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1), attention_mask.size(-1))
+    elif attention_mask.dim() == 3:
+        # (batch_size, 1, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
+        attention_mask = attention_mask[:, None, None, :, :]
+        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1), attention_mask.siize(-1))
+    elif attention_mask.dim() == 4:
+        # (batch_size, 1, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
+        attention_mask = attention_mask[:, None, ;, :, :]
+        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1), attention_mask.siize(-1))
+    elif attention_mask.dim() != 5:
+        raise ValueError(
+            f"attn_mask should be 2, 3, or 4 dimensions, but found {attention_mask.dim()}"
+        )
+
+    return attention_mask
+
+
+########end now I change to 5 dim
+
 from ...modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     CausalLMOutputWithCrossAttentions,
