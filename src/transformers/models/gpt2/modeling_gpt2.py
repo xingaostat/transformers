@@ -231,6 +231,20 @@ def eager_attention_forward(module, query, key, value, attention_mask, head_mask
     return attn_output, attn_weights
 
 ###XG this is the new eager attention
+def softmax_5d(X, axis):
+    """
+    Compute softmax for a 5D tensor along the specified axis.
+
+    Parameters:
+        X (numpy.ndarray or torch.Tensor): Input tensor of shape (sample_size, heads, n, n, n)
+        axis (int or tuple): Axis along which to apply softmax
+
+    Returns:
+        numpy.ndarray or torch.Tensor: Softmax-applied tensor of the same shape as X.
+    """
+    X_exp = torch.exp(X - torch.amax(X, dim=axis, keepdim=True))  # Stability trick
+    return X_exp / torch.sum(X_exp, dim=axis, keepdim=True)
+    
 def eager_EPattention_forward(module, query, key, utility, value, attention_mask, head_mask=None, **kwargs):
     ##attn_weights = torch.matmul(query, key.transpose(-1, -2))
     attn_weights = torch.einsum('abid,abjd,abkd -> ijk', query, key, utility)
