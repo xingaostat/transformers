@@ -193,12 +193,14 @@ class AttentionMaskConverter:
     #### We need to change 
      def _expand_maskEP(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
         """
-        Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
+        Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len, src_seq_len]`.
         """
         bsz, src_len = mask.size()
         tgt_len = tgt_len if tgt_len is not None else src_len
 
         expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+        mask = mask.unsqueeze(2) & mask.unsqueeze(1)
+        mask = mask.unsqueeze(1).unsqueeze(1)
 
         inverted_mask = 1.0 - expanded_mask
 
