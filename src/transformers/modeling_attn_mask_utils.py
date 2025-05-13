@@ -198,9 +198,9 @@ class AttentionMaskConverter:
         bsz, src_len = mask.size()
         tgt_len = tgt_len if tgt_len is not None else src_len
 
-        expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+        #expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
         mask = mask.unsqueeze(2) & mask.unsqueeze(1)
-        mask = mask.unsqueeze(1).unsqueeze(1)
+        expand_mask = mask.unsqueeze(1).unsqueeze(1)
 
         inverted_mask = 1.0 - expanded_mask
 
