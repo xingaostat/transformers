@@ -247,7 +247,7 @@ def softmax_5d(X, axis):
     
 def eager_EPattention_forward(module, query, key, utility, value, attention_mask, head_mask=None, **kwargs):
     ##attn_weights = torch.matmul(query, key.transpose(-1, -2))
-    attn_weights = torch.einsum('abid,abjd,abkd -> ijk', query, key, utility)
+    attn_weights = torch.einsum('abid,abjd,abkd -> abijk', query, key, utility)
     
         
         ####mul_qkl = torch.einsum('abid,abjd,abkd -> abijk', q, k, l) /(self.head_params**0.5)
