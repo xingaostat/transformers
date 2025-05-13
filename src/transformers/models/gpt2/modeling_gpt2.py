@@ -89,12 +89,12 @@ def _prepare_5d_attention_mask_for_sdpa(
     # Expand attention_mask for SDPA compatibility
     if attention_mask.dim() == 2:
         # (batch_size, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, None, None,:]
-        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1),attention_mask.size(-1))
+        attention_mask=attention_mask.unsqueeze(2) & attention_mask.unsqueeze(1)
+        attention_mask = attention_mask.unsqueeze(1).unsqueeze(1)
     elif attention_mask.dim() == 3:
         # (batch_size, 1, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, :, :,None]
-        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1),attention_mask.size(-1))
+        attention_mask=attention_mask.unsqueeze(3) & attention_mask.unsqueeze(2)
+        attention_mask = attention_mask.unsqueeze(1)
     elif attention_mask.dim() != 4:
         raise ValueError(
             f"attn_mask should be 2, 3, or 4 dimensions, but found {attention_mask.dim()}"
