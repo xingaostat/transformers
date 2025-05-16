@@ -224,10 +224,15 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
         ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
         attn_weights = attn_weights + causal_mask
 
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+    ###### change to new soft max function,  
+    ###### attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+    attention_weights = softmax_5d(attn_weights, axis = (-1,-2))
+   
+    
 
     # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
     attn_weights = attn_weights.type(value.dtype)
+    #####module attn_dropout might needs to be changed to new dimension!!
     attn_weights = module.attn_dropout(attn_weights)
 
     # Mask heads if we want to
