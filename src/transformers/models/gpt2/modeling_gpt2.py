@@ -265,9 +265,7 @@ class GPT2Attention(nn.Module):
             persistent=False,
         )
          ######XG 3precomputerd EM causal mask, should I call it mask, it looks weird
-        self.register_buffer(
-            "biasEP",
-            mask = torch.zeros((max_positions, max_positions, max_positions))
+        mask = torch.zeros((max_positions, max_positions, max_positions))
                 for i in range(max_positions):
                     for j in range(max_positions):
                         for k in range(max_positions):
@@ -275,9 +273,8 @@ class GPT2Attention(nn.Module):
                                 mask[i, j, k] = 1
 
              # Add an extra dimension to match the required shape (1, 1, dim, dim,dim)
-            mask = mask.unsqueeze(0).unsqueeze(0)  # (1, 1, dim, dim,dim)
-            persistent=False,
-        )
+        mask = mask.unsqueeze(0).unsqueeze(0)  # (1, 1, dim, dim,dim)
+        self.register_buffer("biasEP",mask,persistent=False)
         #######
         self.register_buffer("masked_bias", torch.tensor(-1e4), persistent=False)
 
