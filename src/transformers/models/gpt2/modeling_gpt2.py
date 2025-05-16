@@ -232,7 +232,7 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
 
     # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
     attn_weights = attn_weights.type(value.dtype)
-    #####module attn_dropout might needs to be changed to new dimension!!
+    #####module attn_dropout might needs to be changed to new dimension!!I checked it is ok.
     attn_weights = module.attn_dropout(attn_weights)
 
     # Mask heads if we want to
