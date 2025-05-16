@@ -31,78 +31,10 @@ from ...cache_utils import Cache, DynamicCache, EncoderDecoderCache, StaticCache
 from ...generation import GenerationMixin
 from ...modeling_attn_mask_utils import AttentionMaskConverter, _prepare_4d_attention_mask_for_sdpa
 
-#####XG: 5d_attention_mask (padding mask)
-####old 4d
-def _prepare_4d_attention_mask_for_sdpa(
-    self,
-    attention_mask: Optional[torch.Tensor],
-    input_shape: Tuple[int],
-    inputs_embeds: torch.Tensor,
-    past_key_values_length: int,
-) -> torch.Tensor:
-    batch_size, seq_length = input_shape
+#####XG: in the file modeling_attn_mask_utils, 
+#####XG we can we need to update the static method make_mask, and _prepare_4d_attention_mask_for_sdpa
+#####XG so that we can have 5 dimensional mask 
 
-    is_causal = self.config.is_causal if self.config.is_causal is not None else True
-    if is_causal and attention_mask is None:
-        # SDPA will use a causal mask internally
-        return None
-
-    # Expand attention_mask for SDPA compatibility
-    if attention_mask.dim() == 2:
-        # (batch_size, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, None, :]
-        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1))
-    elif attention_mask.dim() == 3:
-        # (batch_size, 1, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, :, :]
-    elif attention_mask.dim() != 4:
-        raise ValueError(
-            f"attn_mask should be 2, 3, or 4 dimensions, but found {attention_mask.dim()}"
-        )
-
-    return attention_mask
-
-########
-
-
-########begin now I change to 5 dim
-def _prepare_5d_attention_mask_for_sdpa(
-    self,
-    attention_mask: Optional[torch.Tensor],
-    input_shape: Tuple[int],
-    inputs_embeds: torch.Tensor,
-    past_key_values_length: int,
-) -> torch.Tensor:
-    batch_size, seq_length = input_shape
-
-    is_causal = self.config.is_causal if self.config.is_causal is not None else True
-    if is_causal and attention_mask is None:
-        # SDPA will use a causal mask internally
-        return None
-
-    # Expand attention_mask for SDPA compatibility, so I guess tgt_seq is the query len, in 
-    ###cross attention the order is query first, then key len, utility len, where k length is source seq, u length
-    ###should also be source, where here tgt_seq_len is denoted by seq_len, src_seq_len is denoted by attention_mask.size(-1)
-    ###We need to find a place to declare the attension_mask.
-    ##Question, why seq_length, not attention_mask.size(-1)?I thought they are the same. No.
-   
-    # Expand attention_mask for SDPA compatibility
-    if attention_mask.dim() == 2:
-        # (batch_size, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, None, None,:]
-        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1),attention_mask.size(-1))
-    elif attention_mask.dim() == 3:
-        # (batch_size, 1, seq_length) -> (batch_size, 1, tgt_seq_len, src_seq_len)
-        attention_mask = attention_mask[:, None, :, :,None]
-        attention_mask = attention_mask.expand(batch_size, 1, seq_length, attention_mask.size(-1),attention_mask.size(-1))
-    elif attention_mask.dim() != 4:
-        raise ValueError(
-            f"attn_mask should be 2, 3, or 4 dimensions, but found {attention_mask.dim()}"
-        )
-    return attention_mask
-
-
-########end now I change to 5 dim
 
 from ...modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
@@ -247,13 +179,12 @@ def softmax_5d(X, axis):
     
 def eager_EPattention_forward(module, query, key, utility, value, attention_mask, head_mask=None, **kwargs):
     ##attn_weights = torch.matmul(query, key.transpose(-1, -2))
-    attn_weights = torch.einsum('abid,abjd,abkd -> ijk', query, key, utility)
-    
-        
-        ####mul_qkl = torch.einsum('abid,abjd,abkd -> abijk', q, k, l) /(self.head_params**0.5)
-
+    attn_weights = torch.einsum('abid,abjd,abkd -> abijk', query, key, utility)
+       
+    ####mul_qkl = torch.einsum('abid,abjd,abkd -> abijk', q, k, l) /(self.head_params**0.5)
     ####value.size(-1) is the head_parameters
     ####the following code basically does "/(self.head_params**0.5)"
+    
     if module.scale_attn_weights:
         attn_weights = attn_weights / torch.full(
             [], value.size(-1) ** 0.5, dtype=attn_weights.dtype, device=attn_weights.device
@@ -262,7 +193,10 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     # Layer-wise attention scaling
     if module.scale_attn_by_inverse_layer_idx:
         attn_weights = attn_weights / float(module.layer_idx + 1)
-    #### if this is not cross attention, we need causal mask####
+    #### if this is not cross attention, it is self attention in encoder or decoder,
+    #### self attention in encoder, we need causal
+    
+    we need causal mask####
     if not module.is_cross_attention:
         # if only "normal" attention layer implements causal mask
         query_length, key_length, utility_length = query.size(-2), key.size(-2),utility.size(-2)
