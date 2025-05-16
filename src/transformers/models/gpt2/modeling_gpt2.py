@@ -239,8 +239,13 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     if head_mask is not None:
         attn_weights = attn_weights * head_mask
 
-    attn_output = torch.matmul(attn_weights, value)
+    #attn_output = torch.matmul(attn_weights, value)
+    #attn_output = attn_output.transpose(1, 2)
+    vtilde = torch.einsum('abcd,abed->abced', value, value)
+    # Multiply 3D attention with V^2
+    attn_output = torch.einsum('abijk,abjkl->abil', attn_weights, vtilde)
     attn_output = attn_output.transpose(1, 2)
+    #####new shape is batch, len_seq, num_heads, d_k##
 
     return attn_output, attn_weights
 
