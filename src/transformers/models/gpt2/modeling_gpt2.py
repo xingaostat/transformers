@@ -119,7 +119,8 @@ def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
         pointer.data = torch.from_numpy(array)
     return model
 
-
+#### GPT 2 is a decoder only transformer
+#### Causal self-attention is used. Padding mask is normally not used;cross-attenion is not used.
 def eager_attention_forward(module, query, key, value, attention_mask, head_mask=None, **kwargs):
     attn_weights = torch.matmul(query, key.transpose(-1, -2))
 
@@ -131,7 +132,12 @@ def eager_attention_forward(module, query, key, value, attention_mask, head_mask
     # Layer-wise attention scaling
     if module.scale_attn_by_inverse_layer_idx:
         attn_weights = attn_weights / float(module.layer_idx + 1)
-
+        
+    ###causal mask is always used in decoder only transformer
+    ####GPT-2 doesn't use encoder-decoder attention (unlike T5 or BART).
+    ####It uses self-attention, meaning each token attends within the same input sequence.
+    ####Therefore, query, key, and value vectors are all computed from the same sequence — making their lengths equal.
+    
     if not module.is_cross_attention:
         # if only "normal" attention layer implements causal mask
         query_length, key_length = query.size(-2), key.size(-2)
@@ -193,17 +199,15 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     # Layer-wise attention scaling
     if module.scale_attn_by_inverse_layer_idx:
         attn_weights = attn_weights / float(module.layer_idx + 1)
-    #### if this is not cross attention, it is self attention in encoder or decoder,
-    #### self attention in encoder, we need causal
-    
-    we need causal mask####
+        
+    #### GTP 2 has no cross-attention
     if not module.is_cross_attention:
         # if only "normal" attention layer implements causal mask
-        query_length, key_length, utility_length = query.size(-2), key.size(-2),utility.size(-2)
+        query_length, key_length, utility_length = query.size(-2), key.size(-2), utility.size(-2)
         ###causal_mask = module.bias[:, :, key_length - query_length : key_length, :key_length]
         ###we need to creat a new causal_mask which is called module.biasEP
-        causal_mask = module.biasEP[:, :, : query_length, :key_length,:utility_length]
-        #### I don't know when the lengths could be different???
+        causal_mask = module.biasEP[:, :, :query_length, :key_length,:utility_length]
+        #### I don't know when the lengths could be different, in GTP2, they are all the same
 
         
         mask_value = torch.finfo(attn_weights.dtype).min
@@ -217,7 +221,7 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
         # Apply the attention mask, which is a preprocessed padding mask
         causal_mask = attention_mask[:, :, :, : key.shape[-2]]
         ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
-        
+        ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
         attn_weights = attn_weights + causal_mask
 
     attn_weights = nn.functional.softmax(attn_weights, dim=-1)
