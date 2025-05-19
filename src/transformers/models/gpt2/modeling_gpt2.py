@@ -471,7 +471,7 @@ class GPT2Attention(nn.Module):
         return attn_output, attn_weights
 
 #####new forward function
-   def forward(
+   def EPforward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
         past_key_value: Optional[Cache] = None,
@@ -495,7 +495,7 @@ class GPT2Attention(nn.Module):
             key_states, value_states = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
             attention_mask = encoder_attention_mask
         else:
-            query_states, key_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
+            query_states, key_states, utility_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
 
         shape_q = (*query_states.shape[:-1], -1, self.head_dim)
         shape_kv = (*key_states.shape[:-1], -1, self.head_dim)
@@ -518,7 +518,8 @@ class GPT2Attention(nn.Module):
         is_causal = attention_mask is None and query_states.shape[-2] > 1 and not is_cross_attention
 
         using_eager = self.config._attn_implementation == "eager"
-        attention_interface: Callable = eager_attention_forward
+        ###define the new attention_interface
+        attention_interface: Callable = eager_EPattention_forward
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and (output_attentions or head_mask is not None):
                 using_eager = True
