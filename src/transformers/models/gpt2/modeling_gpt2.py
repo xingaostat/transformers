@@ -304,10 +304,10 @@ class GPT2Attention(nn.Module):
         ##self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
 
         if self.is_cross_attention:
-            self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim) # mapping for the key, value, and l matrix (utinity matrix) 
+            self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim) # mapping for the key, value, and l matrix (utility matrix) 
             self.q_attn = Conv1D(self.embed_dim, self.embed_dim) # mapping for the query matrix 
         else:
-            self.c_attn = Conv1D(4 * self.embed_dim, self.embed_dim) # mapping for q, k, v, utinity matrices 
+            self.c_attn = Conv1D(4 * self.embed_dim, self.embed_dim) # mapping for q, k, v, utility matrices 
         self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
@@ -385,6 +385,7 @@ class GPT2Attention(nn.Module):
         return attn_output, attn_weights
 
     @deprecate_kwarg("layer_past", new_name="past_key_value", version="4.53.0", raise_if_both_names=True)
+    #####here we need modifity the forward function
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
@@ -469,6 +470,94 @@ class GPT2Attention(nn.Module):
 
         return attn_output, attn_weights
 
+#####new forward function
+   def forward(
+        self,
+        hidden_states: Optional[Tuple[torch.FloatTensor]],
+        past_key_value: Optional[Cache] = None,
+        cache_position: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        output_attentions: Optional[bool] = False,
+        **kwargs,
+    ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
+        is_cross_attention = encoder_hidden_states is not None
+        if is_cross_attention:
+            if not hasattr(self, "q_attn"):
+                raise ValueError(
+                    "If class is used as cross attention, the weights `q_attn` have to be defined. "
+                    "Please make sure to instantiate class with `GPT2Attention(..., is_cross_attention=True)`."
+                )
+
+            query_states = self.q_attn(hidden_states)
+            key_states, value_states = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
+            attention_mask = encoder_attention_mask
+        else:
+            query_states, key_states, value_states = self.c_attn(hidden_states).split(self.split_size, dim=2)
+
+        shape_q = (*query_states.shape[:-1], -1, self.head_dim)
+        shape_kv = (*key_states.shape[:-1], -1, self.head_dim)
+
+        query_states = query_states.view(shape_q).transpose(1, 2)
+        key_states = key_states.view(shape_kv).transpose(1, 2)
+        value_states = value_states.view(shape_kv).transpose(1, 2)
+
+        if past_key_value is not None:
+            if isinstance(past_key_value, EncoderDecoderCache):
+                if is_cross_attention:
+                    past_key_value = past_key_value.cross_attention_cache
+                else:
+                    past_key_value = past_key_value.self_attention_cache
+            cache_kwargs = {"cache_position": cache_position}
+            key_states, value_states = past_key_value.update(
+                key_states, value_states, self.layer_idx, cache_kwargs=cache_kwargs
+            )
+
+        is_causal = attention_mask is None and query_states.shape[-2] > 1 and not is_cross_attention
+
+        using_eager = self.config._attn_implementation == "eager"
+        attention_interface: Callable = eager_attention_forward
+        if self.config._attn_implementation != "eager":
+            if self.config._attn_implementation == "sdpa" and (output_attentions or head_mask is not None):
+                using_eager = True
+                logger.warning_once(
+                    "`torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to "
+                    'eager attention. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
+                )
+            else:
+                # Attention functions are consistent with previous equivalent attention classes, however they do not support some options
+                # (e.g. layer scaling, head mask) that eager supports. These implementations are thus equivalent to previous code, but
+                # not necessarily to eager (if mentioned options are provided).
+                attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+
+        if using_eager and self.reorder_and_upcast_attn:
+            attn_output, attn_weights = self._upcast_and_reordered_attn(
+                query_states, key_states, value_states, attention_mask, head_mask
+            )
+        else:
+            attn_output, attn_weights = attention_interface(
+                self,
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                head_mask=head_mask,
+                dropout=self.attn_dropout.p if self.training else 0.0,
+                is_causal=is_causal,
+                **kwargs,
+            )
+
+        attn_output = attn_output.reshape(*attn_output.shape[:-2], -1).contiguous()
+        attn_output = self.c_proj(attn_output)
+        attn_output = self.resid_dropout(attn_output)
+
+        return attn_output, attn_weights
+
+
+
+########
 
 class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
