@@ -543,6 +543,7 @@ class GPT2Attention(nn.Module):
                 self,
                 query_states,
                 key_states,
+                utility_states,
                 value_states,
                 attention_mask,
                 head_mask=head_mask,
@@ -560,7 +561,7 @@ class GPT2Attention(nn.Module):
 
 
 ########end of EPforward###
-
+######the second step feedforward no need to change####
 class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
@@ -595,6 +596,7 @@ class GPT2Block(nn.Module):
         self.mlp = GPT2MLP(inner_dim, config)
 
     @deprecate_kwarg("layer_past", new_name="past_key_value", version="4.53.0", raise_if_both_names=True)
+    
     def forward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
