@@ -219,7 +219,7 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     #####XG need to create attention mask
     if attention_mask is not None:
         # Apply the attention mask, which is a preprocessed padding mask
-        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
+        causal_mask = attention_mask[:, :, :, :, : key.shape[-2]]
         ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
         ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
         attn_weights = attn_weights + causal_mask
@@ -250,7 +250,88 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     return attn_output, attn_weights
 
 ####end of EP Eager
+#####
+def eager_combattention_forward(module, query, key, utility, value, attention_mask, head_mask=None, **kwargs):
+    attn_weights0 = torch.matmul(query, key.transpose(-1, -2))
+    attn_weights = torch.einsum('abid,abjd,abkd -> abijk', query, key, utility)
+       
+    ####mul_qkl = torch.einsum('abid,abjd,abkd -> abijk', q, k, l) /(self.head_params**0.5)
+    ####value.size(-1) is the head_parameters
+    ####the following code basically does "/(self.head_params**0.5)"
+    
+    if module.scale_attn_weights:
+        attn_weights0 = attn_weights0 / torch.full(
+            [], value.size(-1) ** 0.5, dtype=attn_weights0.dtype, device=attn_weights0.device
+         attn_weights = attn_weights / torch.full(
+            [], value.size(-1) ** 0.5, dtype=attn_weights.dtype, device=attn_weights.device    
+        )
+    ### what is this scaling doing here?
+    # Layer-wise attention scaling
+    if module.scale_attn_by_inverse_layer_idx:
+        attn_weights = attn_weights / float(module.layer_idx + 1)
+        attn_weights0 = attn_weights0 / float(module.layer_idx + 1)
+        
+    #### GTP 2 has no cross-attention
+    if not module.is_cross_attention:
+        # if only "normal" attention layer implements causal mask
+        query_length, key_length, utility_length = query.size(-2), key.size(-2), utility.size(-2)
+        causal_mask0 = module.bias[:, :, key_length - query_length : key_length, :key_length]
+        ###we need to creat a new causal_mask which is called module.biasEP
+        causal_mask = module.biasEP[:, :, :query_length, :key_length,:utility_length]
+        #### I don't know when the lengths could be different, in GTP2, they are all the same
 
+        
+        mask_value = torch.finfo(attn_weights.dtype).min
+        # Need to be a tensor, otherwise we get error: `RuntimeError: expected scalar type float but found double`.
+        # Need to be on the same device, otherwise `RuntimeError: ..., x and y to be on the same device`
+        mask_value = torch.full([], mask_value, dtype=attn_weights.dtype, device=attn_weights.device)
+        attn_weights0 = torch.where(causal_mask0, attn_weights0.to(attn_weights0.dtype), mask_value)
+        attn_weights = torch.where(causal_mask, attn_weights.to(attn_weights.dtype), mask_value)
+
+    #####It seems that we do not need the next paragraph.should we delete it. 
+    if attention_mask is not None:
+        # Apply the attention mask, which is a preprocessed padding mask
+         causal_mask0 = attention_mask[:, :, :, : key.shape[-2]]
+        attn_weights0 = attn_weights0 + causal_mask0
+        
+        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
+        ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
+        ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
+        attn_weights = attn_weights + causal_mask
+    ####attention_mask is none, should we delelte this block?
+
+    ###### change to new soft max function,  
+    attn_weights0 = nn.functional.softmax(attn_weights0, dim=-1)
+    attention_weights = softmax_5d(attn_weights, axis = (-1,-2))
+   
+    
+
+    # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
+    attn_weights0 = attn_weights0.type(value.dtype)
+    #####module attn_dropout might needs to be changed to new dimension!!I checked it is ok.
+    attn_weights0 = module.attn_dropout(attn_weights0)
+
+    # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
+    attn_weights = attn_weights.type(value.dtype)
+    #####module attn_dropout might needs to be changed to new dimension!!I checked it is ok.
+    attn_weights = module.attn_dropout(attn_weights)
+
+    # Mask heads if we want to
+    if head_mask is not None:
+        attn_weights = attn_weights * head_mask
+
+    attn_output0 = torch.matmul(attn_weights0, value)
+    attn_output0 = attn_output0.transpose(1, 2)
+    vtilde = torch.einsum('abcd,abed->abced', value, value)
+    # Multiply 3D attention with V^2
+    attn_output = torch.einsum('abijk,abjkl->abil', attn_weights, vtilde)
+    attn_output = attn_output.transpose(1, 2)
+    attn_output = attn_output+attn_output0
+    #####new shape is batch, len_seq, num_heads, d_k##, new att_weights not output
+
+    return attn_output, attn_weights0
+
+######
 
 class GPT2Attention(nn.Module):
     def __init__(self, config, is_cross_attention=False, layer_idx=None):
@@ -470,7 +551,7 @@ class GPT2Attention(nn.Module):
 
         return attn_output, attn_weights
 
-#####new forward function
+#####new forward function  but I guess, I cannot use this function, this has to replace the forward function
    def EPforward(
         self,
         hidden_states: Optional[Tuple[torch.FloatTensor]],
@@ -520,7 +601,7 @@ class GPT2Attention(nn.Module):
 
         using_eager = self.config._attn_implementation == "eager"
         ###define the new attention_interface
-        attention_interface: Callable = eager_EPattention_forward
+        attention_interface: Callable = eager_combattention_forward
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and (output_attentions or head_mask is not None):
                 using_eager = True
