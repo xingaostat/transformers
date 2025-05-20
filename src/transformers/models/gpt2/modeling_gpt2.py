@@ -502,6 +502,7 @@ class GPT2Attention(nn.Module):
 
         query_states = query_states.view(shape_q).transpose(1, 2)
         key_states = key_states.view(shape_kv).transpose(1, 2)
+        utility_states=utility_states.view(shape_kv).transpose(1,2)
         value_states = value_states.view(shape_kv).transpose(1, 2)
 
         if past_key_value is not None:
@@ -558,7 +559,7 @@ class GPT2Attention(nn.Module):
 
 
 
-########
+########end of EPforward###
 
 class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
