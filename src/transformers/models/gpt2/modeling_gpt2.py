@@ -219,7 +219,7 @@ def eager_EPattention_forward(module, query, key, utility, value, attention_mask
     #####XG need to create attention mask
     if attention_mask is not None:
         # Apply the attention mask, which is a preprocessed padding mask
-        causal_mask = attention_mask[:, :, :, :, : key.shape[-2]]
+        causal_mask = attention_mask[:, :, :, None, : key.shape[-2]]
         ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
         ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
         attn_weights = attn_weights + causal_mask
@@ -294,11 +294,11 @@ def eager_combattention_forward(module, query, key, utility, value, attention_ma
          causal_mask0 = attention_mask[:, :, :, : key.shape[-2]]
         attn_weights0 = attn_weights0 + causal_mask0
         
-        causal_mask = attention_mask[:, :, :, : key.shape[-2]]
+        causal_mask = attention_mask[:, :, :, None, : key.shape[-2]]
         ###why slicing here? key might be shorter than the full sequence length (incremental decoding or variable-length sequences).
         ###key.shape[-2] is the length of seq (N);in the attention_mask, padding is -infty,no padding is 0
         attn_weights = attn_weights + causal_mask
-    ####attention_mask is none, should we delelte this block?
+    
 
     ###### change to new soft max function,  
     attn_weights0 = nn.functional.softmax(attn_weights0, dim=-1)
