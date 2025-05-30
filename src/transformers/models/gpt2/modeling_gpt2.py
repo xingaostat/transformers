@@ -318,7 +318,7 @@ def eager_combattention_forward(module, query, key, utility, value, attention_ma
 
     # Mask heads if we want to
     if head_mask is not None:
-        attn_weights = attn_weights * head_mask
+        attn_weights0 = attn_weights0 * head_mask
 
     attn_output0 = torch.matmul(attn_weights0, value)
     attn_output0 = attn_output0.transpose(1, 2)
